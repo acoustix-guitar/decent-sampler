@@ -283,7 +283,7 @@ function afterReplace(){
 let _saveT=null;
 function scheduleSave(){clearTimeout(_saveT);_saveT=setTimeout(autosave,900);}
 function projectJSON(withAudioMeta){
-  const assets=Object.values(ASSETS).map(a=>({name:a.name,kind:a.kind,mime:a.mime,size:a.size,w:a.w,h:a.h,family:a.family,dataURL:(a.kind==='image'||a.kind==='font')?a.dataURL:undefined}));
+  const assets=Object.values(ASSETS).map(a=>({name:a.name,kind:a.kind,mime:a.mime,size:a.size,w:a.w,h:a.h,family:a.family,dir:a.dir,dataURL:(a.kind==='image'||a.kind==='font')?a.dataURL:undefined}));
   return{app:'ds-ui-editor',version:2,project:S,assets};
 }
 function autosave(){
@@ -324,7 +324,7 @@ function joinPath(f,n){f=String(f||'').replace(/\\/g,'/').replace(/^\/+|\/+$/g,'
 /* Pfad eines Feldwerts (Dateiname aus der Dateiliste oder eigener Pfad) -> Pfad in der .dspreset */
 function resolveAssetPath(kind,val,warns){
   if(!val)return'';
-  if(ASSETS[val])return joinPath(folderFor(ASSETS[val].kind),val);
+  if(ASSETS[val])return joinPath(ASSETS[val].dir!==undefined?ASSETS[val].dir:folderFor(ASSETS[val].kind),val);
   if(/[\\/]/.test(val))return val.replace(/\\/g,'/');
   if(warns)warns.push(`File “${val}” is not in the file list – path was entered anyway.`);
   return joinPath(folderFor(kind),val);
@@ -731,7 +731,7 @@ function targetOptions(tk){
     S.buses.forEach((b,bi)=>b.fx.forEach((e,j)=>o.push(['b:'+b.id+':'+e.id,'Bus '+bi+' › '+j+': '+fxLabel(e)])));
     o.push(['__tags','(via effect tag)']);
   }
-  else if(tk==='control')S.elements.forEach((e,i)=>o.push([e.id,i+': '+ELT[e.t].name+(labelOfEl(e)?' „'+labelOfEl(e)+'“':'')]));
+  else if(tk==='control')S.elements.forEach((e,i)=>o.push([e.id,i+': '+ELT[e.t].name+(labelOfEl(e)?' “'+labelOfEl(e)+'“':'')]));
   else if(tk==='modulator'){S.modulators.forEach((m,i)=>o.push([m.id,i+': '+MODS[m.t].name]));o.push(['__tags','(via modulator tag)']);}
   else if(tk==='bus')S.buses.forEach((b,i)=>o.push([b.id,'Bus '+i]));
   else if(tk==='keycolor')S.keyboard.colors.forEach((c,i)=>o.push([c.id,i+': keys '+(c.p.loNote??'?')+'–'+(c.p.hiNote??'?')]));
@@ -743,6 +743,7 @@ function bindingsUI(arr,ctx){
   const chg=(live)=>{if(ctx.on)ctx.on(live);else if(!live)commit();};
   if(!arr.length)box.append(h('p',{class:'note'},'No bindings yet. A binding connects this element to a parameter of the instrument.'));
   arr.forEach((b,idx)=>{
+    if(b.raw){const c=h('div',{class:'bind'},h('div',{class:'row'},h('div',{class:'grow note'},'Binding the editor cannot display (exported unchanged)'),(()=>{const x=h('button',{class:'btn small danger',type:'button',title:'Remove binding'},'✕');x.addEventListener('click',()=>{arr.splice(idx,1);chg(false);redraw();});return x;})()),h('pre',{class:'xml',style:{maxHeight:'90px'}},b.raw));box.append(c);return;}
     const cat=CATBY[b.pid]||CAT[0];
     const card=h('div',{class:'bind'});
     const sel=h('select',{'aria-label':'Parameter'});
@@ -1341,7 +1342,7 @@ function renderFiles(){
       kind.addEventListener('change',()=>{a.kind=kind.value;commit();renderFiles();});
       tb.append(h('tr',{},h('td',{},a.kind==='image'&&a.dataURL?h('img',{class:'thumb',src:a.dataURL,alt:''}):h('span',{class:'pill'},a.kind==='audio'?'♪':a.kind==='font'?'Aa':'📄')),
         h('td',{},a.name,a.missing?h('div',{style:{color:'var(--danger)'},class:'note'},'missing – add the file again (same name)'):null,a.w?h('div',{class:'note'},a.w+' × '+a.h+' px'):null),
-        h('td',{},kind),h('td',{},a.kind==='font'?'(editor only)':joinPath(folderFor(a.kind),a.name)),h('td',{},a.size?Math.round(a.size/1024)+' kB':''),
+        h('td',{},kind),h('td',{},a.kind==='font'?'(editor only)':joinPath(a.dir!==undefined?a.dir:folderFor(a.kind),a.name)),h('td',{},a.size?Math.round(a.size/1024)+' kB':''),
         h('td',{},mkBtn('✕','Remove file',()=>{delete ASSETS[a.name];commit();renderFiles();},'danger'))));
     });
     t.append(tb);inner.append(h('div',{style:{overflow:'auto'}},t));
@@ -1399,7 +1400,7 @@ async function loadProject(obj,keepHistory){
   n.buses.forEach(b=>{b.fx=b.fx||[];});
   const A={};
   for(const a of (obj.assets||[])){
-    const e={name:a.name,kind:a.kind,mime:a.mime,size:a.size,w:a.w,h:a.h,family:a.family};
+    const e={name:a.name,kind:a.kind,mime:a.mime,size:a.size,w:a.w,h:a.h,family:a.family,dir:a.dir};
     if(a.dataURL){e.dataURL=a.dataURL;try{e.blob=await (await fetch(a.dataURL)).blob();}catch(x){}}
     else e.missing=true;
     A[a.name]=e;
@@ -1470,6 +1471,7 @@ function attrStr(o){let s='';for(const k in o)if(o[k]!==undefined&&o[k]!==''&&o[
 
 /* ---- Bindings ---- */
 function bindingLine(b,n,W,where,el){
+  if(b.raw)return ind(n)+b.raw;
   const c=CATBY[b.pid];if(!c){W.push({t:'Unknown binding parameter at '+where,err:true});return null;}
   const a={type:c.type,level:c.level};
   let tgtOk=true;
@@ -1533,6 +1535,7 @@ function elLines(el,idx,n,W,LBL){
   if(el.t==='button'&&!(el.states||[]).length)W.push({t:where+': Button without states.'});
   if((el.t==='image'||el.t==='multiFrameImage')&&!p.path)W.push({t:where+': No image file selected.',err:false});
   if(el.t==='menu'&&!(el.opts||[]).length)W.push({t:where+': Menu without entries.'});
+  if(el.raw)el.raw.split('\n').forEach(l=>kids.push(ind(n+1)+l));
   return tagL(n,d.tag,attrs,kids);
 }
 
@@ -1545,16 +1548,18 @@ function buildXml(W,LBL){
   const ui=S.ui;const uiAttrs=A(UI_FIELDS.filter(f=>f.k!=='tabName'),ui,W,'UI');
   const tabKids=[];
   S.elements.forEach((el,i)=>tabKids.push(...elLines(el,i,3,W,LBL)));
+  if(ui.rawTab)ui.rawTab.split('\n').forEach(l=>tabKids.push(ind(3)+l));
   const uiKids=tagL(2,'tab',attrStr({name:ui.tabName||'main'}),tabKids);
   if(S.keyboard.on){
     const kc=S.keyboard.colors.map(c=>ind(3)+'<color'+A(KEYCOLOR_FIELDS,c.p,W,'Key color')+'/>');
     uiKids.push(...tagL(2,'keyboard',attrStr({centerNote:isNum(S.keyboard.centerNote)?S.keyboard.centerNote:''}),kc));
   }
+  if(ui.rawUi)ui.rawUi.split('\n').forEach(l=>uiKids.push(ind(2)+l));
   L.push(...tagL(1,'ui',uiAttrs,uiKids));
   /* Gruppen */
   const gk=[];
   S.groups.forEach((g,i)=>{
-    const w='Group '+i+' „'+(g.p.name||'')+'“';
+    const w='Group '+i+' “'+(g.p.name||'')+'“';
     const kids=[];
     if(g.osc.on)kids.push(ind(3)+'<oscillator'+A([...OSC_FIELDS,...SYNTH_GROUP_FIELDS(g.osc.p)],g.osc.p,W,w+' Oscillator')+'/>');
     g.samples.forEach((s,j)=>{
@@ -1564,6 +1569,7 @@ function buildXml(W,LBL){
       else if(a.missing||!a.blob)W.push({t:w+': The audio file “'+s.p.path+'” is missing (not saved in the project) – please add it again under “Files”, otherwise it will be missing from the ZIP.'});
       kids.push(ind(3)+'<sample'+A(SAMPLE_FIELDS,s.p,W,w+', sample '+(j+1))+'/>');
     });
+    if(g.raw)g.raw.split('\n').forEach(l=>kids.push(ind(3)+l));
     if(g.fx.length)kids.push(...tagL(3,'effects','',g.fx.map(e=>ind(4)+'<effect type="'+e.type+'"'+A(EFFECTS[e.type].fields,e.p,W,w+' Effect')+'/>')));
     if(!g.osc.on&&!g.samples.length)W.push({t:w+' contains neither samples nor an oscillator – it will stay silent.'});
     gk.push(...tagL(2,'group',A(GROUP_FIELDS,g.p,W,w),kids));
@@ -1635,7 +1641,7 @@ async function buildAll(){
   for(const a of Object.values(ASSETS)){
     if(a.kind==='font')continue;
     if(a.missing||!a.blob){if(a.kind!=='audio')W.push({t:'File “'+a.name+'” is missing.'});continue;}
-    all.push({path:joinPath(folderFor(a.kind),a.name),data:a.blob});
+    all.push({path:joinPath(a.dir!==undefined?a.dir:folderFor(a.kind),a.name),data:a.blob});
   }
   all.push(...files);
   const usedA=new Set();S.groups.forEach(g=>g.samples.forEach(s=>usedA.add(s.p.path)));
@@ -1673,6 +1679,223 @@ async function makeZip(files){
   end.setUint32(0,0x06054b50,true);end.setUint16(8,files.length,true);end.setUint16(10,files.length,true);end.setUint32(12,csize,true);end.setUint32(16,off,true);
   return new Blob([...parts,...central,end.buffer],{type:'application/zip'});
 }
+/* ===================== .dspreset importieren / Import ===================== */
+const LANG='en';
+const tt=(de,en)=>LANG==='en'?en:de;
+const normP=p=>{const out=[];String(p||'').replace(/\\/g,'/').split('/').forEach(s=>{if(s===''||s==='.')return;if(s==='..'){out.pop();return;}out.push(s);});return out.join('/');};
+const dirOf=p=>{const i=p.lastIndexOf('/');return i<0?'':p.slice(0,i);};
+const baseOf=p=>p.slice(p.lastIndexOf('/')+1);
+const PATH_KEYS=['path','mainImage','hoverImage','clickImage','customSkinImage','customSkinHoverImage','bgImage','coverArt','irFile','wavetableFile'];
+const serN=n=>new XMLSerializer().serializeToString(n);
+
+function parseDspresetDoc(doc,pathMap,W){
+  const P=newProject();P.groups=[];P.elements=[];P.groupsP={};P.keyboard={on:false,centerNote:'',colors:[]};
+  P.ui.bgColor='';P.customXml='';
+  const pend=[];
+  const conv=(f,v)=>{
+    if(f.t==='bool')return v==='true'||v==='1';
+    if(f.t==='num'||f.t==='int')return isNum(v)?Number(v):undefined;
+    if(f.t==='col')return normARGB(v)||undefined;
+    if(f.t==='img'||f.t==='aud'||f.t==='fil'){const np=normP(v);return pathMap[np]!==undefined?pathMap[np]:v;}
+    return v;
+  };
+  const attrsTo=(fields,node,skip)=>{
+    const p={},extra=[];
+    for(const at of node.attributes){
+      const k=at.name,v=at.value;if(skip&&skip.includes(k))continue;
+      const f=fields.find(x=>x.k===k&&!x.ed&&x.k!=='extra');
+      const c=f?conv(f,v):undefined;
+      if(c===undefined)extra.push(k+'="'+esc(v)+'"');else p[k]=c;
+    }
+    if(extra.length)p.extra=extra.join(' ');
+    return p;
+  };
+  const kids=n=>[...n.children];
+  const addRaw=(o,n)=>{o.raw=(o.raw?o.raw+'\n':'')+serN(n);};
+  const parseBinding=(n,where)=>{
+    const a={};for(const at of n.attributes)a[at.name]=at.value;
+    let cat=CAT.find(c=>c.type===a.type&&c.level===a.level&&c.p===a.parameter);
+    if(!cat&&a.type==='effect')cat=CATBY['effect/instrument/'+a.parameter];
+    if(!cat)cat=CAT.find(c=>c.type===a.type&&c.p===a.parameter);
+    if(!cat){W.push(tt('Binding bei '+where+' (type="'+a.type+'", level="'+a.level+'", parameter="'+a.parameter+'") ist im Editor nicht darstellbar und bleibt als rohes XML erhalten.','Binding at '+where+' (type="'+a.type+'", level="'+a.level+'", parameter="'+a.parameter+'") cannot be shown in the editor and is kept as raw XML.'));return{id:uid(),raw:serN(n)};}
+    const b={id:uid(),pid:cat.id,tgt:'',tag:'',translation:a.translation||'linear',outMin:a.translationOutputMin??'',outMax:a.translationOutputMax??'',rev:a.translationReversed==='true',table:a.translationTable||'0,0;1,1',fix:a.translationValue??'',factor:a.factor??'',modBehavior:a.modBehavior||'',en:a.enabled!=='false',trig:a.triggerOnLoad!=='false'};
+    pend.push({b,a,cat,where});return b;
+  };
+  const bindInto=(arr,nodes,where)=>nodes.forEach(n=>{if(n.localName==='binding')arr.push(parseBinding(n,where));});
+  const parseEffect=(arr,n)=>{
+    const type=n.getAttribute('type'),def=EFFECTS[type];
+    if(!def){W.push(tt('Unbekannter Effekttyp “'+type+'“ wurde übersprungen.','Unknown effect type “'+type+'” was skipped.'));return;}
+    arr.push({id:uid(),type,p:attrsTo(def.fields,n,['type'])});
+  };
+  /* ---- UI ---- */
+  const root=doc.documentElement;
+  P.minVersion=root.getAttribute('minVersion')||'1.0.0';
+  kids(root).forEach(n=>{
+    const nm=n.localName;
+    if(nm==='ui'){
+      Object.assign(P.ui,attrsTo(UI_FIELDS.filter(f=>f.k!=='tabName'),n));
+      let tabDone=false;
+      kids(n).forEach(c=>{
+        if(c.localName==='tab'&&!tabDone){
+          tabDone=true;P.ui.tabName=c.getAttribute('name')||'main';
+          kids(c).forEach(e=>{
+            const t=Object.keys(ELT).find(k=>ELT[k].tag===e.localName);
+            if(!t){P.ui.rawTab=(P.ui.rawTab?P.ui.rawTab+'\n':'')+serN(e);W.push(tt('Unbekanntes UI-Element <'+e.localName+'> bleibt als rohes XML erhalten.','Unknown UI element <'+e.localName+'> is kept as raw XML.'));return;}
+            const el={id:uid(),t,p:attrsTo(ELT[t].fields,e),b:[]};
+            const where=ELT[t].name+' #'+P.elements.length;
+            if(t==='button')el.states=[];if(t==='menu')el.opts=[];if(t==='xyPad'){el.xb=[];el.yb=[];}
+            kids(e).forEach(k=>{
+              const kn=k.localName;
+              if(kn==='binding'&&(ELT[t].knob||t==='drawbars'))el.b.push(parseBinding(k,where));
+              else if(t==='button'&&kn==='state'){const s={p:attrsTo(BTNSTATE_FIELDS,k),b:[]};bindInto(s.b,kids(k),where);el.states.push(s);}
+              else if(t==='menu'&&kn==='option'){const s={p:attrsTo([F.txt('name','',{})],k),b:[]};bindInto(s.b,kids(k),where);el.opts.push(s);}
+              else if(t==='xyPad'&&(kn==='x'||kn==='y'))bindInto(kn==='x'?el.xb:el.yb,kids(k),where+' '+kn.toUpperCase());
+              else{addRaw(el,k);W.push(tt('Unbekanntes Kind-Element <'+kn+'> bei '+where+' bleibt als rohes XML erhalten.','Unknown child element <'+kn+'> at '+where+' is kept as raw XML.'));}
+            });
+            P.elements.push(el);
+          });
+        }else if(c.localName==='keyboard'){
+          P.keyboard.on=true;P.keyboard.centerNote=c.getAttribute('centerNote')||'';
+          kids(c).forEach(k=>{if(k.localName==='color')P.keyboard.colors.push({id:uid(),p:attrsTo(KEYCOLOR_FIELDS,k)});});
+        }else{P.ui.rawUi=(P.ui.rawUi?P.ui.rawUi+'\n':'')+serN(c);W.push(tt('<'+c.localName+'> in <ui> bleibt als rohes XML erhalten.','<'+c.localName+'> in <ui> is kept as raw XML.'));}
+      });
+    }else if(nm==='groups'){
+      P.groupsP=attrsTo(GROUPS_FIELDS,n);
+      kids(n).forEach(gn=>{
+        if(gn.localName!=='group'){P.customXml+=serN(gn)+'\n';return;}
+        const g={id:uid(),p:attrsTo(GROUP_FIELDS,gn),osc:{on:false,p:{waveform:'sine'}},samples:[],fx:[]};
+        kids(gn).forEach(c=>{
+          const cn=c.localName;
+          if(cn==='sample')g.samples.push({id:uid(),p:attrsTo(SAMPLE_FIELDS,c)});
+          else if(cn==='oscillator'){g.osc.on=true;g.osc.p=attrsTo([...OSC_FIELDS,...HARM_FIELDS,...FM_FIELDS],c);}
+          else if(cn==='effects')kids(c).forEach(e=>parseEffect(g.fx,e));
+          else{addRaw(g,c);W.push(tt('<'+cn+'> in einer Gruppe bleibt als rohes XML erhalten.','<'+cn+'> in a group is kept as raw XML.'));}
+        });
+        P.groups.push(g);
+      });
+    }else if(nm==='effects')kids(n).forEach(e=>parseEffect(P.effects,e));
+    else if(nm==='buses'){
+      kids(n).forEach((bn,i)=>{
+        const b={id:uid(),p:attrsTo(BUS_FIELDS,bn,['busId']),fx:[]};
+        const bid=bn.getAttribute('busId');if(bid&&bid!=='BUS_'+(i+1))W.push(tt('Bus “'+bid+'“ wird als BUS_'+(i+1)+' (Reihenfolge) exportiert.','Bus “'+bid+'” will be exported as BUS_'+(i+1)+' (by order).'));
+        kids(bn).forEach(c=>{if(c.localName==='effects')kids(c).forEach(e=>parseEffect(b.fx,e));});
+        P.buses.push(b);
+      });
+    }else if(nm==='tags')kids(n).forEach(t=>P.tags.push({id:uid(),p:attrsTo(TAG_FIELDS,t)}));
+    else if(nm==='modulators'){
+      kids(n).forEach((mn,i)=>{
+        let t=mn.localName,skip=[];
+        if(t==='modulator'&&MODS[mn.getAttribute('type')]){t=mn.getAttribute('type');skip=['type'];}
+        if(!MODS[t]){W.push(tt('Unbekannter Modulator <'+t+'> wurde übersprungen.','Unknown modulator <'+t+'> was skipped.'));return;}
+        const m={id:uid(),t,p:attrsTo(MODS[t].fields,mn,skip),b:[]};bindInto(m.b,kids(mn),'Modulator '+i);P.modulators.push(m);
+      });
+    }else if(nm==='midi'){
+      kids(n).forEach(c=>{
+        const cn=c.localName;
+        if(cn==='cc'){const o={id:uid(),p:attrsTo([F.int('number','',{})],c),b:[]};bindInto(o.b,kids(c),'CC '+(o.p.number??''));P.midi.ccs.push(o);}
+        else if(cn==='note'){const o={id:uid(),p:attrsTo(MIDINOTE_FIELDS,c),b:[]};bindInto(o.b,kids(c),'MIDI '+(o.p.note??''));P.midi.notes.push(o);}
+        else if(cn==='velocity'){P.midi.velocity.on=true;bindInto(P.midi.velocity.b,kids(c),'Velocity');}
+        else W.push(tt('<'+cn+'> in <midi> wurde übersprungen.','<'+cn+'> in <midi> was skipped.'));
+      });
+    }else if(nm==='arpeggiator'){
+      P.arp.on=n.getAttribute('enabled')==='true';
+      P.arp.p=attrsTo(ARP_FIELDS.slice(1),n,['enabled']);
+    }else P.customXml+=serN(n)+'\n';
+  });
+  P.customXml=P.customXml.trim();
+  /* ---- Binding-Ziele auflösen ---- */
+  const I=v=>v===undefined||v===''?undefined:parseInt(v,10);
+  pend.forEach(({b,a,cat,where})=>{
+    const bad=()=>W.push(tt('Binding “'+cat.label+'“ bei '+where+': Ziel konnte nicht zugeordnet werden – bitte im Editor prüfen.','Binding “'+cat.label+'” at '+where+': target could not be matched – please check in the editor.'));
+    const tk=cat.tk;
+    if(tk==='none')return;
+    if(tk==='tag'){b.tag=a.identifier||'';return;}
+    if(a.identifier&&a.position===undefined&&a.groupIndex===undefined&&a.busIndex===undefined){b.tgt='__tags';b.tag=a.identifier;return;}
+    let id;
+    if(tk==='group'){const g=P.groups[I(a.position??a.groupIndex)];id=g&&g.id;}
+    else if(tk==='control'){const e=P.elements[I(a.position??a.controlIndex)];id=e&&e.id;}
+    else if(tk==='modulator'){const e=P.modulators[I(a.modulatorIndex??a.position)];id=e&&e.id;}
+    else if(tk==='bus'){const e=P.buses[I(a.busIndex??a.position)];id=e&&e.id;}
+    else if(tk==='keycolor'){const e=P.keyboard.colors[I(a.colorIndex??a.position)];id=e&&e.id;}
+    else if(tk==='effect'){
+      if(a.level==='group'){const g=P.groups[I(a.groupIndex??a.position)];const e=g&&g.fx[I(a.effectIndex)??0];id=g&&e&&('g:'+g.id+':'+e.id);}
+      else if(a.level==='bus'){const g=P.buses[I(a.busIndex??a.position)];const e=g&&g.fx[I(a.effectIndex)??0];id=g&&e&&('b:'+g.id+':'+e.id);}
+      else{const e=P.effects[I(a.position)];id=e&&('i:'+e.id);}
+    }
+    if(id)b.tgt=id;else bad();
+  });
+  return P;
+}
+
+async function importDspreset(fileList){
+  const files=[...fileList];
+  const dsps=files.filter(f=>/\.(dspreset|xml)$/i.test(f.name));
+  if(!dsps.length){toast(tt('Keine .dspreset-Datei gefunden.','No .dspreset file found.'),true);return;}
+  let dsp=dsps[0];
+  if(dsps.length>1){
+    const list=dsps.map((f,i)=>(i+1)+': '+(f.webkitRelativePath||f.name)).join('\n');
+    const n=parseInt(prompt(tt('Mehrere .dspreset-Dateien gefunden – bitte Nummer eingeben:\n','Several .dspreset files found – please enter a number:\n')+list,'1'),10);
+    if(!(n>=1&&n<=dsps.length))return;dsp=dsps[n-1];
+  }
+  const doc=new DOMParser().parseFromString(await dsp.text(),'application/xml');
+  if(doc.querySelector('parsererror')||doc.documentElement.localName!=='DecentSampler'){toast(tt('Das ist keine gültige .dspreset-Datei (XML-Fehler).','This is not a valid .dspreset file (XML error).'),true);return;}
+  if(!confirm(tt('Das aktuelle Projekt wird durch die importierte .dspreset ersetzt. Fortfahren?','The current project will be replaced by the imported .dspreset. Continue?')))return;
+  const dspDir=dirOf(normP(dsp.webkitRelativePath||''));
+  const byRel=new Map(),byBase=new Map();
+  files.forEach(f=>{if(f===dsp)return;byRel.set(normP(f.webkitRelativePath||f.name).toLowerCase(),f);const b=f.name.toLowerCase();if(!byBase.has(b))byBase.set(b,f);});
+  const find=np=>byRel.get(normP((dspDir?dspDir+'/':'')+np).toLowerCase())||byBase.get(baseOf(np).toLowerCase())||null;
+  /* referenzierte Dateien sammeln */
+  const refs=new Map();
+  doc.querySelectorAll('*').forEach(e=>PATH_KEYS.forEach(k=>{
+    const v=e.getAttribute(k);if(!v||!v.trim())return;
+    const kind=e.localName==='sample'?'audio':(k==='irFile'||k==='wavetableFile')?'other':'image';
+    refs.set(normP(v),kind);
+  }));
+  ASSETS={};const pathMap={},firstDir={};let missing=0,found=0;
+  for(const[np,kind]of refs){
+    const f=find(np);let a;
+    if(f){a=(await addAssetFiles([f],kind))[0];found++;}
+    else{a={name:uniqueName(baseOf(np)),kind,missing:true,size:0};ASSETS[a.name]=a;missing++;}
+    pathMap[np]=a.name;a.dir=dirOf(np);
+    if(firstDir[kind]===undefined)firstDir[kind]=dirOf(np);
+  }
+  const W=[];
+  const P=parseDspresetDoc(doc,pathMap,W);
+  P.name=dsp.name.replace(/\.[^.]+$/,'');
+  P.paths={images:firstDir.image??'Images',samples:firstDir.audio??'Samples',other:firstDir.other??firstDir.audio??'Samples'};
+  Object.values(ASSETS).forEach(a=>{const def=a.kind==='image'?P.paths.images:a.kind==='audio'?P.paths.samples:P.paths.other;if(a.dir===def)delete a.dir;});
+  S=P;SEL=null;SOUNDSEL=null;resetHistory();scheduleSave();
+  setView('design');renderAll();
+  if(missing)W.unshift(tt(missing+' referenzierte Datei(en) wurden nicht mitgeliefert (als “fehlt“ markiert). Füge sie im Tab “Dateien & Ordner“ mit gleichem Namen hinzu, damit sie im Export enthalten sind.',missing+' referenced file(s) were not provided (marked as missing). Add them in the “Files & Folders” tab with the same name so they are included in the export.'));
+  showImportReport(P,found,missing,W);
+}
+
+function showImportReport(P,found,missing,W){
+  const dlg=h('dialog',{},h('h3',{},tt('Import abgeschlossen','Import finished')),
+    h('p',{},tt(`“${P.name}“: ${P.elements.length} UI-Elemente, ${P.groups.length} Gruppe(n), ${P.groups.reduce((s,g)=>s+g.samples.length,0)} Sample(s), ${P.effects.length} globale(r) Effekt(e). Dateien: ${found} geladen, ${missing} fehlen.`,
+      `“${P.name}”: ${P.elements.length} UI elements, ${P.groups.length} group(s), ${P.groups.reduce((s,g)=>s+g.samples.length,0)} sample(s), ${P.effects.length} global effect(s). Files: ${found} loaded, ${missing} missing.`)));
+  if(W.length)dlg.append(h('h2',{},tt('Hinweise','Notes')),h('ul',{style:{maxHeight:'40vh',overflow:'auto'}},W.map(w=>h('li',{style:{margin:'4px 0'}},w))));
+  const ok=h('button',{class:'btn primary',type:'button'},'OK');ok.addEventListener('click',()=>{dlg.close();dlg.remove();});
+  dlg.append(h('div',{class:'row',style:{justifyContent:'flex-end',marginTop:'14px'}},ok));
+  document.body.append(dlg);dlg.showModal();
+}
+
+function openImportDialog(){
+  const dlg=h('dialog',{},h('h3',{},tt('.dspreset importieren','Import .dspreset')),
+    h('p',{class:'note'},tt('Lade eine vorhandene .dspreset, um sie hier zu bearbeiten. Das aktuelle Projekt wird ersetzt. Grafiken und Samples werden mitgeladen, wenn du den ganzen Ordner wählst – so bleiben die Pfade erhalten.','Load an existing .dspreset to edit it here. The current project will be replaced. Images and samples are loaded too if you choose the whole folder – this keeps the paths intact.')));
+  const run=async(inp)=>{await new Promise(r=>{inp.onchange=r;inp.click();});dlg.close();dlg.remove();if(inp.files.length)try{await importDspreset(inp.files);}catch(e){console.error(e);toast(tt('Import fehlgeschlagen: ','Import failed: ')+e.message,true);}};
+  const bFolder=h('button',{class:'btn primary',type:'button',style:{width:'100%',margin:'6px 0'}},tt('📁 Ordner wählen (empfohlen)','📁 Choose folder (recommended)'));
+  const bFiles=h('button',{class:'btn',type:'button',style:{width:'100%',margin:'6px 0'}},tt('📄 .dspreset-Datei (und evtl. weitere Dateien) wählen','📄 Choose .dspreset file (and optionally more files)'));
+  const bCancel=h('button',{class:'btn',type:'button'},tt('Abbrechen','Cancel'));bCancel.addEventListener('click',()=>{dlg.close();dlg.remove();});
+  bFolder.addEventListener('click',()=>run(h('input',{type:'file',webkitdirectory:true,multiple:true})));
+  bFiles.addEventListener('click',()=>run(h('input',{type:'file',multiple:true,accept:'.dspreset,.xml,image/*,audio/*,.wav,.aif,.aiff,.flac,.ttf,.otf'})));
+  dlg.append(bFolder,bFiles,h('div',{class:'row',style:{justifyContent:'flex-end',marginTop:'10px'}},bCancel));
+  document.body.append(dlg);dlg.showModal();
+}
+function initImport(){
+  const b=h('button',{class:'btn',id:'btnImport',type:'button',title:tt('Vorhandene .dspreset zum Bearbeiten laden','Load an existing .dspreset for editing')},tt('.dspreset importieren','Import .dspreset'));
+  b.addEventListener('click',openImportDialog);$('#btnOpen').after(b);
+}
 /* ===================== Start & Steuerung ===================== */
 function renderAll(){
   $('#projName').value=S.name;
@@ -1709,7 +1932,7 @@ async function dropFiles(files,x,y){
   if(!ad)toast(as.length+' file(s) added'+(made?' – image(s) inserted as element.':'.'));
 }
 function init(){
-  initDesign();
+  initDesign();initImport();
   $$('#tabs button').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
   $('#btnGoExport').addEventListener('click',()=>setView('export'));
   $('#btnUndo').addEventListener('click',undo);$('#btnRedo').addEventListener('click',redo);
