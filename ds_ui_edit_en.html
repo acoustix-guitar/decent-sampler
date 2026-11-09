@@ -1365,7 +1365,7 @@ async function renderExport(){
   const row=h('div',{class:'row',style:{flexWrap:'wrap',margin:'12px 0'}});
   row.append(mkBtn('⬇ Download ZIP (.dspreset + folders + files)','',async()=>{const z=await makeZip(b.files.map(f=>({path:(nm+'/'+f.path),data:f.data})).concat([]));download(nm+'.zip',z);},'primary'));
   row.append(mkBtn('.dspreset only','',()=>download(nm+'.dspreset',new Blob([b.xml],{type:'application/xml'}))));
-  if(window.showDirectoryPicker)row.append(mkBtn('Save to folder…','Write directly to a folder',()=>saveToFolder(b,nm)));
+  folderButtons(row);
   row.append(mkBtn('Copy XML','',async()=>{try{await navigator.clipboard.writeText(b.xml);toast('XML copied');}catch(e){toast('Copying not possible',true);}}));
   row.append(mkBtn('Save project (JSON)','',saveProject));
   inner.append(row);
@@ -1373,18 +1373,6 @@ async function renderExport(){
   const files=h('details',{class:'sec'},h('summary',{},'Included files ('+b.files.length+')'),h('div',{class:'body'},h('ul',{},b.files.map(f=>h('li',{},f.path)))));inner.append(files);
   inner.append(h('h3',{style:{marginTop:'16px'}},'Preview of the .dspreset'),h('pre',{class:'xml',tabindex:0},b.xml));
 }
-async function saveToFolder(b,nm){
-  try{
-    const dir=await window.showDirectoryPicker({mode:'readwrite'});
-    for(const f of b.files){
-      const parts=f.path.split('/');let d=dir;
-      for(let i=0;i<parts.length-1;i++)d=await d.getDirectoryHandle(parts[i],{create:true});
-      const fh=await d.getFileHandle(parts[parts.length-1],{create:true});const w=await fh.createWritable();await w.write(f.data);await w.close();
-    }
-    toast('Saved to folder “'+dir.name+'“ ('+b.files.length+' files)');
-  }catch(e){if(e.name!=='AbortError')toast('Saving failed: '+e.message,true);}
-}
-
 /* ---- Projekte ---- */
 function saveProject(){
   const nm=(S.name||'Project').replace(/[\\/:*?"<>|]/g,'_');
@@ -1896,6 +1884,58 @@ function initImport(){
   const b=h('button',{class:'btn',id:'btnImport',type:'button',title:tt('Vorhandene .dspreset zum Bearbeiten laden','Load an existing .dspreset for editing')},tt('.dspreset importieren','Import .dspreset'));
   b.addEventListener('click',openImportDialog);$('#btnOpen').after(b);
 }
+/* ===================== Gemerkter Speicherordner ===================== */
+let DIRH=null;
+const FS_OK=!!window.showDirectoryPicker;
+function idbOpen(){return new Promise((res,rej)=>{const r=indexedDB.open('dsui',1);r.onupgradeneeded=()=>r.result.createObjectStore('kv');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error);});}
+async function idbGet(k){try{const d=await idbOpen();return await new Promise(res=>{const q=d.transaction('kv').objectStore('kv').get(k);q.onsuccess=()=>res(q.result||null);q.onerror=()=>res(null);});}catch(e){return null;}}
+async function idbSet(k,v){try{const d=await idbOpen();await new Promise(res=>{const t=d.transaction('kv','readwrite');t.objectStore('kv').put(v,k);t.oncomplete=res;t.onerror=res;t.onabort=res;});}catch(e){}}
+async function dirPermission(d,ask){
+  try{let p=await d.queryPermission({mode:'readwrite'});if(p!=='granted'&&ask)p=await d.requestPermission({mode:'readwrite'});return p==='granted';}catch(e){return false;}
+}
+async function pickDir(){const d=await window.showDirectoryPicker({mode:'readwrite'});DIRH=d;await idbSet('dir',d);updateFolderUI();return d;}
+async function sameSize(dir,parts,size){
+  try{let d=dir;for(let i=0;i<parts.length-1;i++)d=await d.getDirectoryHandle(parts[i]);const f=await(await d.getFileHandle(parts[parts.length-1])).getFile();return f.size===size;}catch(e){return false;}
+}
+/* b = Ergebnis von buildAll(); changeDir = true erzwingt neue Ordnerwahl */
+async function saveToFolder(b,changeDir){
+  try{
+    if(!FS_OK){toast(tt('Dieser Browser kann nicht direkt in Ordner speichern (bitte Chrome oder Edge nutzen) – nutze das ZIP.','This browser cannot save directly to folders (please use Chrome or Edge) – use the ZIP.'),true);return;}
+    let dir=DIRH;
+    if(changeDir||!dir||!(await dirPermission(dir,true)))dir=await pickDir();
+    let written=0,skipped=0;
+    for(const f of b.files){
+      const parts=f.path.split('/');
+      const heavy=/\.(wav|aif|aiff|flac|mp3|ogg|rx2|png|jpg|jpeg|gif|webp|svg)$/i.test(f.path)&&!/(^|\/)label_\d+\.png$/.test(f.path);
+      if(heavy&&f.data&&f.data.size!==undefined&&await sameSize(dir,parts,f.data.size)){skipped++;continue;}
+      let d=dir;for(let i=0;i<parts.length-1;i++)d=await d.getDirectoryHandle(parts[i],{create:true});
+      const w=await(await d.getFileHandle(parts[parts.length-1],{create:true})).createWritable();await w.write(f.data);await w.close();written++;
+    }
+    const errs=b.warns.filter(w=>w.err).length;
+    toast(tt('Gespeichert in „'+dir.name+'“ – '+written+' Datei(en) geschrieben'+(skipped?', '+skipped+' unverändert übersprungen':'')+(errs?' (⚠ '+errs+' Fehler in der Prüfliste)':'')+'.','Saved to “'+dir.name+'” – '+written+' file(s) written'+(skipped?', '+skipped+' unchanged skipped':'')+(errs?' (⚠ '+errs+' error(s) in the check list)':'')+'.'),!!errs);
+  }catch(e){if(e.name!=='AbortError')toast(tt('Speichern fehlgeschlagen: ','Saving failed: ')+e.message,true);}
+}
+function folderButtons(row){
+  if(!FS_OK)return;
+  const name=DIRH?DIRH.name:'';
+  row.append(mkBtn(DIRH?tt('💾 In Ordner „'+name+'“ speichern','💾 Save to folder “'+name+'”'):tt('In Ordner speichern…','Save to folder…'),tt('Direkt in den gemerkten Ordner schreiben','Write directly to the remembered folder'),()=>{if(LASTBUILD)saveToFolder(LASTBUILD,false);},'primary'));
+  if(DIRH)row.append(mkBtn(tt('Anderen Ordner wählen…','Choose a different folder…'),'',()=>{if(LASTBUILD)saveToFolder(LASTBUILD,true);}));
+}
+function updateFolderUI(){
+  const b=$('#btnQuickSave');if(!b)return;
+  b.title=DIRH?tt('Sofort in den Ordner „'+DIRH.name+'“ speichern (Strg+Umschalt+S)','Save right away to folder “'+DIRH.name+'” (Ctrl+Shift+S)'):tt('Ordner wählen und speichern (Strg+Umschalt+S)','Choose a folder and save (Ctrl+Shift+S)');
+  b.textContent=DIRH?tt('💾 In „'+DIRH.name+'“','💾 To “'+DIRH.name+'”'):tt('💾 In Ordner','💾 To folder');
+}
+async function quickSave(){
+  try{const b=await buildAll();LASTBUILD=b;await saveToFolder(b,false);}catch(e){toast(tt('Fehler: ','Error: ')+e.message,true);}
+}
+async function initFolder(){
+  if(!FS_OK)return;
+  const btn=h('button',{class:'btn',id:'btnQuickSave',type:'button'},'');
+  btn.addEventListener('click',quickSave);$('#btnGoExport').before(btn);
+  DIRH=await idbGet('dir');updateFolderUI();
+  document.addEventListener('keydown',e=>{if((e.ctrlKey||e.metaKey)&&e.shiftKey&&e.key.toLowerCase()==='s'){e.preventDefault();quickSave();}});
+}
 /* ===================== Start & Steuerung ===================== */
 function renderAll(){
   $('#projName').value=S.name;
@@ -1932,7 +1972,7 @@ async function dropFiles(files,x,y){
   if(!ad)toast(as.length+' file(s) added'+(made?' – image(s) inserted as element.':'.'));
 }
 function init(){
-  initDesign();initImport();
+  initDesign();initImport();initFolder();
   $$('#tabs button').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.view)));
   $('#btnGoExport').addEventListener('click',()=>setView('export'));
   $('#btnUndo').addEventListener('click',undo);$('#btnRedo').addEventListener('click',redo);
