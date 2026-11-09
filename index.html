@@ -30,6 +30,7 @@ nav a:hover,.text-link:hover{color:var(--accent)}
 .btn.light{background:var(--accent2);color:var(--accent)}
 .btn.light:hover{background:#dce6ff}
 .hero{padding:46px 0 56px}
+
 .hero-panel{position:relative;overflow:hidden;border-radius:30px;background:linear-gradient(115deg,#17202b 0%,#253b57 60%,#345f8d 100%);color:white;padding:clamp(34px,6vw,76px);min-height:390px;display:flex;align-items:center}
 .hero-panel:before,.hero-panel:after{content:"";position:absolute;border:1px solid rgba(255,255,255,.13);border-radius:50%;width:460px;height:460px;right:-70px;top:-170px}
 .hero-panel:after{width:330px;height:330px;right:0;top:-105px}
@@ -158,6 +159,13 @@ h2{font-size:clamp(27px,3.5vw,38px);letter-spacing:-.035em;line-height:1.15;marg
     background: #dcecff;
     transform: scale(1.08);
 }
+
+.header {
+  background: url('images/bg.png') no-repeat center center / cover;
+  min-height: 400px;
+}
+
+
 </style>
 </head>
 <body>
@@ -174,16 +182,19 @@ h2{font-size:clamp(27px,3.5vw,38px);letter-spacing:-.035em;line-height:1.15;marg
 
 <main>
 <section class="hero wrap">
-  <div class="hero-panel">
+
+  <div class="hero-panel header">
+
     <div class="hero-copy">
+
       <div class="eyebrow">Virtuelle Instrumente · Handcrafted sounds</div>
-      <h1>Sounds mit<br>Charakter.</h1>
+      <h1>Sounds mit Charakter</h1>
       <p>Individuell gesampelte Instrumente und Klangwelten für <a href="https://www.decentsamples.com/product/decent-sampler-plugin/" target="_blank"><br />>> <u>Decent Sampler</a></u>. Mit Sorgfalt aufgenommen, programmiert und für deine Musik gemacht.</p>
       <div class="hero-actions">
         <a class="btn" href="#instruments">Instrumente entdecken <span>→</span></a>
-        <a class="btn light" href="#about">Mehr erfahren</a>
+        <a class="btn" href="#about">Mehr erfahren <span>→</span></a>
       </div>
-      <div class="trust-row"><span>Für Decent Sampler</span><span>Direkt & unkompliziert</span><span>Mit Audio-Demos</span></div>
+      
     </div>
     <div class="hero-art" aria-hidden="true">
      
